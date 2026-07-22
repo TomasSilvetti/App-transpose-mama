@@ -33,7 +33,19 @@ jobs:
       - name: Verificar el motor de transposición
         run: npm run verify:pitch
 
-      - name: Compilar y publicar
-        run: npm run release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # Solo compila (next build + electron-builder --publish never). La publicación va en un
+      # paso aparte y explícito, porque el --publish interno de electron-builder termina en
+      # éxito sin dejar el release visible. dist genera exe, blockmap y latest.yml.
+      - name: Compilar el instalador
+        run: npm run dist
+        shell: bash
+
+      # El autoUpdater necesita los tres: el .exe, su .blockmap y latest.yml.
+      - name: Publicar el release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/*.blockmap
+            release/latest.yml
+          fail_on_unmatched_files: true
