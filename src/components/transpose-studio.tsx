@@ -12,6 +12,7 @@ import { TransposeControls } from "@/components/transpose-controls";
 import { UpdateBanner } from "@/components/update-banner";
 import { UrlForm } from "@/components/url-form";
 import { VersionBar } from "@/components/version-bar";
+import { VersionBadge } from "@/components/version-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useExport, type ExportTarget } from "@/hooks/use-export";
@@ -197,9 +198,12 @@ export function TransposeStudio() {
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-10 sm:px-6 lg:py-14">
       <header className="flex flex-col gap-3">
-        <div className="flex items-center gap-2 text-accent">
-          <Music2 className="size-5" aria-hidden />
-          <span className="text-xs font-semibold uppercase tracking-[0.2em]">Transpose</span>
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 text-accent">
+            <Music2 className="size-5" aria-hidden />
+            <span className="text-xs font-semibold uppercase tracking-[0.2em]">Transpose</span>
+          </div>
+          <VersionBadge />
         </div>
         <h1 className="text-3xl font-semibold text-ink sm:text-4xl">
           Cambiá el tono de cualquier canción de YouTube
