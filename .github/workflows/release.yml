@@ -1,0 +1,39 @@
+name: Publicar instalador
+
+# Se dispara al empujar un tag de versión: git tag v0.3.0 && git push --tags
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar tipos y estilo
+        run: |
+          npx tsc --noEmit
+          npm run lint
+
+      - name: Verificar el motor de transposición
+        run: npm run verify:pitch
+
+      - name: Compilar y publicar
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

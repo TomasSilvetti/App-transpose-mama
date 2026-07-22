@@ -6,6 +6,14 @@ contextBridge.exposeInMainWorld("transpose", {
   saveMp3: (fileName, data) => ipcRenderer.invoke("file:save-mp3", { fileName, data }),
   exportVideo: (payload) => ipcRenderer.invoke("video:export", payload),
   revealFile: (filePath) => ipcRenderer.invoke("file:reveal", filePath),
+  getAppVersion: () => ipcRenderer.invoke("app:version"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
+
+  onUpdateStatus: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("update:status", listener);
+    return () => ipcRenderer.off("update:status", listener);
+  },
 
   onDownloadProgress: (callback) => {
     const listener = (_event, payload) => callback(payload);

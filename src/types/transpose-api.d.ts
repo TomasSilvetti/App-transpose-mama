@@ -11,6 +11,14 @@ export type ExportStatus = {
   progress?: number;
 };
 
+export type UpdateStatus =
+  | { phase: "checking" }
+  | { phase: "available"; version: string }
+  | { phase: "downloading"; percent: number }
+  | { phase: "ready"; version: string }
+  | { phase: "none" }
+  | { phase: "error"; message: string };
+
 export type TransposeApi = {
   ensureDownloader: () => Promise<{ version: string | null; warning: string | null }>;
   loadVideo: (
@@ -28,7 +36,10 @@ export type TransposeApi = {
     durationSeconds: number;
   }) => Promise<{ saved: boolean; filePath?: string }>;
   revealFile: (filePath: string) => Promise<void>;
+  getAppVersion: () => Promise<string>;
+  installUpdate: () => Promise<void>;
   onExportStatus: (callback: (payload: ExportStatus) => void) => () => void;
+  onUpdateStatus: (callback: (payload: UpdateStatus) => void) => () => void;
   onDownloadProgress: (
     callback: (payload: { videoId: string; progress: number }) => void,
   ) => () => void;

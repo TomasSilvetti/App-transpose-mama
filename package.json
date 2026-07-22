@@ -1,7 +1,7 @@
 {
   "name": "app-transpose",
   "productName": "Transpose",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Cambiá el tono de canciones de YouTube para practicar y descargalas en MP3",
   "author": "Tomás Silvetti",
@@ -14,7 +14,8 @@
     "dist": "next build && electron-builder --win --publish never",
     "dist:dir": "next build && electron-builder --win --dir --publish never",
     "verify:pitch": "node scripts/verify-pitch.mjs",
-    "smoke": "next build && cross-env TRANSPOSE_SMOKE=1 electron ."
+    "smoke": "next build && cross-env TRANSPOSE_SMOKE=1 electron .",
+    "release": "next build && electron-builder --win --publish always"
   },
   "build": {
     "appId": "com.silvetti.transpose",
@@ -38,7 +39,14 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "Transpose"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "TomasSilvetti",
+        "repo": "App-transpose-mama"
+      }
+    ]
   },
   "dependencies": {
     "@breezystack/lamejs": "^1.2.7",
@@ -46,6 +54,7 @@
     "adm-zip": "^0.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "electron-updater": "^6.8.9",
     "lucide-react": "^1.25.0",
     "next": "16.2.11",
     "react": "19.2.4",

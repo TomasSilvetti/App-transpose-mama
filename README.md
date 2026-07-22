@@ -38,6 +38,28 @@ YouTube cambia seguido y `yt-dlp` publica parches cada pocos días. La app se en
 - El binario vive en la carpeta de datos del usuario, no requiere permisos de administrador.
 - Si no hay internet o GitHub falla, sigue usando la versión ya descargada en vez de quedar inutilizable.
 
+## Actualizaciones automáticas
+
+La app busca versiones nuevas en las releases de GitHub cada vez que se abre, las descarga en
+segundo plano y las instala al cerrarse. No hay que pasar instaladores a mano.
+
+Para publicar una versión nueva:
+
+```bash
+npm version patch      # o minor / major
+git push --follow-tags
+```
+
+El tag dispara el workflow de GitHub Actions, que verifica tipos, estilo y el motor de
+transposición, compila el instalador y lo publica como release. De ahí lo toman las apps instaladas.
+
+La instalación queda para el cierre a propósito: interrumpir a alguien que está practicando sería
+peor que esperar a la próxima vez que abra el programa. El botón "Reiniciar ahora" solo adelanta ese
+momento.
+
+Las descargas son diferenciales gracias al `.blockmap` que publica electron-builder: si solo cambió
+el código de la app, se bajan unos pocos MB y no el instalador entero.
+
 ## Cuando YouTube pide iniciar sesión
 
 YouTube rechaza pedidos de forma intermitente con un *"Please sign in"*, aunque el video sea

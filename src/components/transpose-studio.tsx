@@ -9,6 +9,7 @@ import { SongLibrary } from "@/components/song-library";
 import { VideoStage } from "@/components/video-stage";
 import { TransportControls } from "@/components/transport-controls";
 import { TransposeControls } from "@/components/transpose-controls";
+import { UpdateBanner } from "@/components/update-banner";
 import { UrlForm } from "@/components/url-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -207,6 +208,8 @@ export function TransposeStudio() {
           descargás en MP3 para llevarlo a donde quieras.
         </p>
       </header>
+
+      <UpdateBanner />
 
       <UrlForm onSubmit={(videoId) => void loadVideo(videoId)} isLoading={busy} />
 

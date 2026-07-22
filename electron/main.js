@@ -7,6 +7,7 @@ const { YtDlpManager } = require("./ytdlp");
 const { startStaticServer } = require("./static-server");
 const { MediaServer } = require("./media-server");
 const { FfmpegManager } = require("./ffmpeg");
+const { setupUpdater } = require("./updater");
 
 // El smoke corre sin empaquetar pero debe ejercer la UI compilada, no el dev server.
 const isDev = !app.isPackaged && process.env.TRANSPOSE_SMOKE !== "1";
@@ -15,6 +16,7 @@ const DEV_URL = "http://localhost:3000";
 let mainWindow = null;
 let ytdlp = null;
 let ffmpeg = null;
+let updater = null;
 let readyPromise = null;
 const media = new MediaServer();
 // Ruta del video de la canción abierta, necesaria para exportarlo con el audio nuevo.
@@ -115,6 +117,9 @@ app.whenReady().then(async () => {
   const appUrl = await resolveAppUrl();
   createWindow(appUrl);
   void ensureYtDlp().catch(() => {});
+
+  updater = setupUpdater({ app, send });
+  void updater.checkNow();
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(appUrl);
@@ -252,6 +257,12 @@ ipcMain.handle("file:save-mp3", async (_event, { fileName, data }) => {
 
 ipcMain.handle("file:reveal", async (_event, filePath) => {
   shell.showItemInFolder(filePath);
+});
+
+ipcMain.handle("app:version", () => app.getVersion());
+
+ipcMain.handle("update:install", () => {
+  updater?.installNow();
 });
 
 /** Duración en segundos que tendrá el audio ya procesado, para no cortar el video de más. */
