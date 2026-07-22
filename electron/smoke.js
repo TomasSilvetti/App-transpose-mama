@@ -85,6 +85,13 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
         document.querySelector("button[aria-label='Reproducir']"));
       log("descarga+decode", "listo");
 
+      const videoEl = document.querySelector("video");
+      log("video presente", videoEl ? "si" : "NO HAY <video>");
+      if (videoEl) {
+        await until("metadata del video", () => videoEl.readyState >= 1, 30000);
+        log("video", videoEl.videoWidth + "x" + videoEl.videoHeight + ", " + videoEl.duration.toFixed(0) + "s");
+      }
+
       // Tres clicks sincrónicos: si los handlers leen estado viejo, se pierden dos.
       const up = document.querySelector("button[aria-label='Subir un semitono']");
       up.click(); up.click(); up.click();
@@ -98,10 +105,30 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
       log("bajar 1", document.querySelector(".text-4xl")?.textContent);
 
       playButton.click();
-      await wait(2500);
+      await wait(3000);
       const clock = document.querySelector("div.tabular-nums span")?.textContent;
       log("reproduccion", clock && clock !== "0:00" ? "avanzo a " + clock : "NO AVANZO (" + clock + ")");
+
+      if (videoEl) {
+        log("video reproduciendo", videoEl.paused ? "PAUSADO (falla)" : "si, en " + videoEl.currentTime.toFixed(2) + "s");
+
+        // El reloj visible está redondeado a segundos, así que un desfase puntual no dice nada.
+        // Lo que importa es si crece con el tiempo: eso sería deriva real.
+        const leer = () => {
+          const t = document.querySelector("div.tabular-nums span")?.textContent || "0:00";
+          const [m, s] = t.split(":").map(Number);
+          return videoEl.currentTime - (m * 60 + s);
+        };
+        const d1 = leer();
+        await wait(6000);
+        const d2 = leer();
+        const deriva = Math.abs(d2 - d1);
+        log("deriva en 6s", deriva.toFixed(2) + "s " + (deriva <= 0.5 ? "OK (estable)" : "CRECE"));
+      }
+
       document.querySelector("button[aria-label='Pausar']")?.click();
+      await wait(400);
+      if (videoEl) log("pausa arrastra al video", videoEl.paused ? "si" : "NO (falla)");
 
       const buttons = [...document.querySelectorAll("button")];
       const download = buttons.find((b) => b.textContent.includes("Descargar MP3"));

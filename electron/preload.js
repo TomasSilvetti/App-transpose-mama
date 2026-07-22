@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("transpose", {
   ensureDownloader: () => ipcRenderer.invoke("ytdlp:ensure"),
-  loadVideo: (videoId) => ipcRenderer.invoke("video:load", videoId),
+  loadVideo: (videoId, quality) => ipcRenderer.invoke("video:load", videoId, quality),
   saveMp3: (fileName, data) => ipcRenderer.invoke("file:save-mp3", { fileName, data }),
   revealFile: (filePath) => ipcRenderer.invoke("file:reveal", filePath),
 

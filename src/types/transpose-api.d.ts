@@ -1,4 +1,4 @@
-import type { VideoInfo } from "@/lib/youtube";
+import type { VideoInfo, VideoQuality } from "@/lib/youtube";
 
 export type DownloaderStatus =
   | { phase: "preparing"; message: string }
@@ -7,7 +7,10 @@ export type DownloaderStatus =
 
 export type TransposeApi = {
   ensureDownloader: () => Promise<{ version: string | null; warning: string | null }>;
-  loadVideo: (videoId: string) => Promise<{ info: VideoInfo; audio: ArrayBuffer }>;
+  loadVideo: (
+    videoId: string,
+    quality: VideoQuality,
+  ) => Promise<{ info: VideoInfo; audio: ArrayBuffer; videoUrl: string | null }>;
   saveMp3: (
     fileName: string,
     data: ArrayBuffer,

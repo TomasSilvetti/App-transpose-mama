@@ -5,6 +5,8 @@ practicás con el audio ya transportado y lo descargás en MP3 con los cambios i
 
 ## Qué hace
 
+- **Video sincronizado** con el audio transportado, para seguir la letra en pistas de karaoke.
+  Calidad elegible: solo audio, 360p, 720p o 1080p.
 - **Portada y ficha** de la canción a partir del link.
 - **Transposición de ±12 semitonos**, aplicada en vivo mientras suena.
 - **Velocidad de 0.5× a 1.5× sin desafinar**: se puede practicar más lento manteniendo el tono.
@@ -77,6 +79,7 @@ electron/
   preload.js         Puente seguro hacia el renderer (contextIsolation)
   ytdlp.js           Descarga y autoactualización de yt-dlp
   static-server.js   Sirve la UI compilada por HTTP local
+  media-server.js    Sirve el video descargado, con soporte de Range para el seek
   smoke.js           Prueba end-to-end automatizada
 src/
   components/        UI
@@ -94,6 +97,11 @@ Decisiones que conviene no revertir sin entender el motivo:
   módulos ES, y la exportación de MP3 depende de ambos.
 - **Los botones de tono usan ajuste relativo.** Calcular el valor durante el render hace que varios
   clicks seguidos lean el mismo estado y se pierdan todos menos uno.
+- **El video se descarga sin su pista de audio.** Como el audio va aparte —lo procesa el motor de
+  transposición— no hace falta combinarlos, y eso evita depender de `ffmpeg`, que sumaría unos 80 MB
+  al instalador. El `<video>` va mudo y sigue el reloj del audio.
+- **El video se sirve por HTTP local, no por IPC.** Mandarlo como `ArrayBuffer` cargaría decenas de
+  megabytes en memoria y perdería el seek nativo.
 
 ## Uso personal
 

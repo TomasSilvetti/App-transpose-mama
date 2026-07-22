@@ -50,3 +50,14 @@ export const videoInfoSchema = z.object({
 });
 
 export type VideoInfo = z.infer<typeof videoInfoSchema>;
+
+export const videoQualitySchema = z.enum(["audio", "360", "720", "1080"]);
+
+export type VideoQuality = z.infer<typeof videoQualitySchema>;
+
+export const QUALITY_LABELS: Record<VideoQuality, { label: string; hint: string }> = {
+  audio: { label: "Solo audio", hint: "Lo más rápido" },
+  "360": { label: "360p", hint: "Liviano" },
+  "720": { label: "720p", hint: "Recomendado" },
+  "1080": { label: "1080p", hint: "Más nítido" },
+};

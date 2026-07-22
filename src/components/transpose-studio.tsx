@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { AlertCircle, Download, FolderOpen, Loader2, Music2 } from "lucide-react";
 
+import { QualityPicker } from "@/components/quality-picker";
 import { SongLibrary } from "@/components/song-library";
+import { VideoStage } from "@/components/video-stage";
 import { TransportControls } from "@/components/transport-controls";
 import { TransposeControls } from "@/components/transpose-controls";
 import { UrlForm } from "@/components/url-form";
@@ -13,8 +15,15 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useMp3Export } from "@/hooks/use-mp3-export";
 import { useTransposePlayer } from "@/hooks/use-transpose-player";
 import { formatSemitones, formatTime } from "@/lib/utils";
-import { readLibrary, removeSong, upsertSong, type SavedSong } from "@/lib/storage";
-import { videoInfoSchema, type VideoInfo } from "@/lib/youtube";
+import {
+  readLibrary,
+  readQuality,
+  removeSong,
+  upsertSong,
+  writeQuality,
+  type SavedSong,
+} from "@/lib/storage";
+import { videoInfoSchema, type VideoInfo, type VideoQuality } from "@/lib/youtube";
 import type { DownloaderStatus } from "@/types/transpose-api";
 
 /** Miniatura pública de YouTube: permite mostrar la portada sin esperar la descarga. */
@@ -26,6 +35,8 @@ export function TransposeStudio() {
   const [library, setLibrary] = useState<SavedSong[]>([]);
   const [video, setVideo] = useState<VideoInfo | null>(null);
   const [audioData, setAudioData] = useState<ArrayBuffer | null>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [quality, setQuality] = useState<VideoQuality>("720");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
@@ -48,6 +59,12 @@ export function TransposeStudio() {
     // localStorage no existe durante el prerender: leerlo antes rompería la hidratación.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLibrary(readLibrary());
+    setQuality(readQuality());
+  }, []);
+
+  const handleQualityChange = useCallback((value: VideoQuality) => {
+    setQuality(value);
+    writeQuality(value);
   }, []);
 
   useEffect(() => {
@@ -83,6 +100,7 @@ export function TransposeStudio() {
       setLoadError(null);
       setDownloadProgress(0);
       setAudioData(null);
+      setVideoUrl(null);
       pendingSettings.current = settings ?? { semitones: 0, tempo: 1 };
 
       // La portada aparece de inmediato; el resto de la ficha llega con la descarga.
@@ -98,11 +116,12 @@ export function TransposeStudio() {
         const api = window.transpose;
         if (!api) throw new Error("Esta pantalla necesita ejecutarse dentro de la app de escritorio.");
 
-        const { info, audio } = await api.loadVideo(videoId);
+        const { info, audio, videoUrl: url } = await api.loadVideo(videoId, quality);
         const parsed = videoInfoSchema.parse(info);
 
         setVideo(parsed);
         setAudioData(audio);
+        setVideoUrl(url);
         setLibrary(
           upsertSong({
             ...parsed,
@@ -118,7 +137,7 @@ export function TransposeStudio() {
         setIsLoading(false);
       }
     },
-    [],
+    [quality],
   );
 
   // Persistir los ajustes en cuanto el usuario los toca, para reencontrarlos la próxima vez.
@@ -211,24 +230,49 @@ export function TransposeStudio() {
           {video ? (
             <Card className="overflow-hidden">
               <div className="relative aspect-video w-full bg-surface-input">
-                <Image
-                  src={video.thumbnail}
-                  alt={`Portada de ${video.title}`}
-                  fill
-                  unoptimized
-                  sizes="(min-width: 1024px) 640px, 100vw"
-                  className="object-cover"
-                  priority
-                />
-                <div className="absolute inset-0 bg-gradient-to-t from-surface-raised via-surface-raised/20 to-transparent" />
-                <div className="absolute inset-x-0 bottom-0 p-5">
-                  <h2 className="line-clamp-2 text-lg font-semibold text-ink">{video.title}</h2>
-                  <p className="text-sm text-ink-muted">
+                {videoUrl && isReady ? (
+                  <VideoStage
+                    src={videoUrl}
+                    currentTime={player.currentTime}
+                    isPlaying={player.isPlaying}
+                    tempo={player.tempo}
+                  />
+                ) : (
+                  <Image
+                    src={video.thumbnail}
+                    alt={`Portada de ${video.title}`}
+                    fill
+                    unoptimized
+                    sizes="(min-width: 1024px) 640px, 100vw"
+                    className="object-cover"
+                    priority
+                  />
+                )}
+
+                {/* Con el video visible la letra importa más que el título: no se tapa. */}
+                {videoUrl && isReady ? null : (
+                  <>
+                    <div className="absolute inset-0 bg-gradient-to-t from-surface-raised via-surface-raised/20 to-transparent" />
+                    <div className="absolute inset-x-0 bottom-0 p-5">
+                      <h2 className="line-clamp-2 text-lg font-semibold text-ink">{video.title}</h2>
+                      <p className="text-sm text-ink-muted">
+                        {video.author}
+                        {video.duration > 0 ? ` · ${formatTime(video.duration)}` : ""}
+                      </p>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {videoUrl && isReady ? (
+                <div className="border-b border-border-subtle px-6 py-3">
+                  <h2 className="line-clamp-1 text-sm font-semibold text-ink">{video.title}</h2>
+                  <p className="text-xs text-ink-muted">
                     {video.author}
                     {video.duration > 0 ? ` · ${formatTime(video.duration)}` : ""}
                   </p>
                 </div>
-              </div>
+              ) : null}
 
               <CardContent className="pt-5">
                 {isLoading ? (
@@ -338,6 +382,15 @@ export function TransposeStudio() {
               </CardContent>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Video</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <QualityPicker value={quality} onChange={handleQualityChange} disabled={isLoading} />
+            </CardContent>
+          </Card>
 
           <Card>
             <CardHeader>
