@@ -1,26 +1,71 @@
 {
   "name": "app-transpose",
+  "productName": "Transpose",
   "version": "0.1.0",
   "private": true,
+  "description": "Cambiá el tono de canciones de YouTube para practicar y descargalas en MP3",
+  "author": "Tomás Silvetti",
+  "main": "electron/main.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "concurrently -k -n next,electron -c cyan,magenta \"next dev\" \"wait-on tcp:3000 && electron .\"",
+    "dev:web": "next dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "dist": "next build && electron-builder --win --publish never",
+    "dist:dir": "next build && electron-builder --win --dir --publish never",
+    "verify:pitch": "node scripts/verify-pitch.mjs",
+    "smoke": "next build && cross-env TRANSPOSE_SMOKE=1 electron ."
+  },
+  "build": {
+    "appId": "com.silvetti.transpose",
+    "productName": "Transpose",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*",
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Transpose"
+    }
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
+    "@hookform/resolvers": "^5.4.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^1.25.0",
     "next": "16.2.11",
     "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "react-dom": "19.2.4",
+    "react-hook-form": "^7.82.0",
+    "soundtouchjs": "^0.3.0",
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "concurrently": "^10.0.3",
+    "cross-env": "^10.1.0",
+    "electron": "^43.2.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.2.11",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wait-on": "^9.1.0"
   }
 }

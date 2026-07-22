@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
+@theme {
+  --color-surface: #0b0f19;
+  --color-surface-raised: #121826;
+  --color-surface-input: #0f1522;
+  --color-border-subtle: #1f2937;
+  --color-ink: #f1f5f9;
+  --color-ink-muted: #94a3b8;
+  --color-accent: #f97316;
+  --color-accent-soft: #fb923c;
+
+  --radius-card: 1.25rem;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background:
+    radial-gradient(60rem 40rem at 15% -10%, rgba(249, 115, 22, 0.16), transparent 60%),
+    radial-gradient(50rem 35rem at 90% 0%, rgba(56, 189, 248, 0.12), transparent 55%),
+    var(--color-surface);
+  color: var(--color-ink);
+  min-height: 100vh;
+}
+
+@utility range-track {
+  appearance: none;
+  background: transparent;
+
+  &::-webkit-slider-runnable-track {
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      var(--color-accent) var(--fill, 0%),
+      var(--color-border-subtle) var(--fill, 0%)
+    );
+  }
+
+  &::-webkit-slider-thumb {
+    appearance: none;
+    height: 1.15rem;
+    width: 1.15rem;
+    margin-top: -0.33rem;
+    border-radius: 9999px;
+    background: var(--color-accent);
+    border: 2px solid var(--color-surface);
+    cursor: pointer;
+    transition: transform 120ms ease;
+  }
+
+  &::-webkit-slider-thumb:hover {
+    transform: scale(1.15);
+  }
+
+  &::-moz-range-track {
+    height: 0.5rem;
+    border-radius: 9999px;
+    background: linear-gradient(
+      to right,
+      var(--color-accent) var(--fill, 0%),
+      var(--color-border-subtle) var(--fill, 0%)
+    );
+  }
+
+  &::-moz-range-thumb {
+    height: 1.15rem;
+    width: 1.15rem;
+    border: 2px solid var(--color-surface);
+    border-radius: 9999px;
+    background: var(--color-accent);
+    cursor: pointer;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--color-accent-soft);
+    outline-offset: 4px;
+  }
 }
