@@ -31,6 +31,12 @@ function thumbnailFor(videoId: string) {
   return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 }
 
+/** Electron antepone su propia cáscara al error del proceso principal; acá sobra. */
+function cleanErrorMessage(error: unknown) {
+  const raw = error instanceof Error ? error.message : "Error inesperado.";
+  return raw.replace(/^Error invoking remote method '[^']*':\s*(Error:\s*)?/, "");
+}
+
 export function TransposeStudio() {
   const [library, setLibrary] = useState<SavedSong[]>([]);
   const [video, setVideo] = useState<VideoInfo | null>(null);
@@ -40,6 +46,7 @@ export function TransposeStudio() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [retryNotice, setRetryNotice] = useState<string | null>(null);
   const [downloader, setDownloader] = useState<DownloaderStatus | null>(null);
   const pendingSettings = useRef<{ semitones: number; tempo: number } | null>(null);
 
@@ -81,10 +88,14 @@ export function TransposeStudio() {
     }
     const stopStatus = api.onDownloaderStatus(setDownloader);
     const stopProgress = api.onDownloadProgress(({ progress }) => setDownloadProgress(progress));
+    const stopRetry = api.onDownloadRetry(({ intento, total }) =>
+      setRetryNotice(`YouTube demoró en responder. Reintentando (${intento} de ${total})…`),
+    );
     void api.ensureDownloader().catch(() => {});
     return () => {
       stopStatus();
       stopProgress();
+      stopRetry();
     };
   }, []);
 
@@ -100,6 +111,7 @@ export function TransposeStudio() {
     async (videoId: string, settings?: { semitones: number; tempo: number }) => {
       setIsLoading(true);
       setLoadError(null);
+      setRetryNotice(null);
       setDownloadProgress(0);
       setAudioData(null);
       setVideoUrl(null);
@@ -134,9 +146,10 @@ export function TransposeStudio() {
         );
       } catch (error) {
         setVideo(null);
-        setLoadError(error instanceof Error ? error.message : "Error inesperado.");
+        setLoadError(cleanErrorMessage(error));
       } finally {
         setIsLoading(false);
+        setRetryNotice(null);
       }
     },
     [quality],
@@ -282,7 +295,7 @@ export function TransposeStudio() {
                   <div className="flex flex-col gap-2 py-6">
                     <div className="flex items-center gap-2 text-sm text-ink-muted">
                       <Loader2 className="size-4 animate-spin" aria-hidden />
-                      Descargando el audio…
+                      {retryNotice ?? "Descargando la canción…"}
                     </div>
                     <div className="h-1.5 w-full overflow-hidden rounded-full bg-border-subtle">
                       <div

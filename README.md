@@ -38,6 +38,21 @@ YouTube cambia seguido y `yt-dlp` publica parches cada pocos días. La app se en
 - El binario vive en la carpeta de datos del usuario, no requiere permisos de administrador.
 - Si no hay internet o GitHub falla, sigue usando la versión ya descargada en vez de quedar inutilizable.
 
+## Cuando YouTube pide iniciar sesión
+
+YouTube rechaza pedidos de forma intermitente con un *"Please sign in"*, aunque el video sea
+público: el mismo link que falla anda al reintentar. La app reintenta sola hasta cuatro veces,
+alternando el cliente que usa `yt-dlp`.
+
+La secuencia salió de medirla, no de suponerla. Sobre un video que fallaba seguido:
+
+| Configuración | Éxitos |
+|---|---|
+| `default` | 2/4 |
+| `android_vr,ios,tv_embedded` | 2/4 |
+| `tv,web_safari,mweb` | **0/4** ← descartada |
+| Alternando las dos primeras, con 1.5s entre intentos | **6/6** |
+
 ## Binarios externos
 
 Ninguno viaja dentro del instalador: se descargan a la carpeta de datos del usuario cuando hacen

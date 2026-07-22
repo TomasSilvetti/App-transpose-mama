@@ -3,7 +3,7 @@
  * pegar el link, esperar la descarga, transportar, reproducir y exportar el MP3.
  * Se ejecuta con TRANSPOSE_SMOKE=1.
  */
-const SMOKE_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
+const SMOKE_URL = process.env.TRANSPOSE_SMOKE_URL || "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 
 const fs = require("node:fs");
 

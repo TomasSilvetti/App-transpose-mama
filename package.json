@@ -1,7 +1,7 @@
 {
   "name": "app-transpose",
   "productName": "Transpose",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Cambiá el tono de canciones de YouTube para practicar y descargalas en MP3",
   "author": "Tomás Silvetti",
@@ -32,6 +32,7 @@
         "nsis"
       ]
     },
+    "artifactName": "App-Transpose-Mama-${version}.${ext}",
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

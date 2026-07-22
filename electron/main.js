@@ -134,6 +134,30 @@ ipcMain.handle("ytdlp:ensure", async () => {
   return { version: result.version, warning: result.warning ?? null };
 });
 
+/** Traduce la salida de yt-dlp a algo accionable para quien está usando la app. */
+function describeDownloadError(message = "") {
+  if (/please sign in|sign in to confirm|not a bot/i.test(message)) {
+    return "YouTube nos pidió iniciar sesión para este video. Suele ser pasajero: probá de nuevo en unos segundos.";
+  }
+  if (/private video/i.test(message)) return "Este video es privado.";
+  if (/video unavailable|not available/i.test(message)) {
+    return "Este video no está disponible. Puede haber sido borrado o tener restricciones por país.";
+  }
+  if (/age|confirm your age/i.test(message)) {
+    return "Este video tiene restricción de edad y YouTube no lo entrega sin iniciar sesión.";
+  }
+  if (/members-only|join this channel/i.test(message)) {
+    return "Este video es solo para miembros del canal.";
+  }
+  if (/live event will begin|is live/i.test(message)) {
+    return "Es una transmisión en vivo, no se puede usar hasta que termine.";
+  }
+  if (/getaddrinfo|network|timed out|connection/i.test(message)) {
+    return "No pudimos conectarnos a YouTube. Revisá tu conexión a internet.";
+  }
+  return "No pudimos descargar esta canción. Probá de nuevo o con otro video.";
+}
+
 /**
  * Metadatos y audio en una sola corrida de yt-dlp. Separarlo en dos invocaciones hace que
  * YouTube responda 403 en la segunda, así que la ficha y el archivo salen juntos.
@@ -149,13 +173,15 @@ ipcMain.handle("video:load", async (_event, videoId, quality = "720") => {
   let keepFiles = false;
 
   try {
-    await ytdlp.run(
+    await ytdlp.runWithFallback(
       [
         "--no-playlist",
         "--no-warnings",
         "--newline",
         "--progress",
         "--write-info-json",
+        "--extractor-retries",
+        "3",
         "-f",
         buildFormatSelector(quality),
         "-o",
@@ -167,6 +193,8 @@ ipcMain.handle("video:load", async (_event, videoId, quality = "720") => {
           const match = line.match(/\[download\]\s+([\d.]+)%/);
           if (match) send("video:progress", { videoId, progress: Number(match[1]) / 100 });
         },
+        onRetry: (intento, total) =>
+          send("video:retry", { videoId, intento, total }),
       },
     );
 
@@ -201,6 +229,8 @@ ipcMain.handle("video:load", async (_event, videoId, quality = "720") => {
       audio: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
       videoUrl,
     };
+  } catch (error) {
+    throw new Error(describeDownloadError(error.message));
   } finally {
     // El video se sigue leyendo desde disco mientras se reproduce; el audio ya está en memoria.
     if (!keepFiles) await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});

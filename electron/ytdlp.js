@@ -102,6 +102,43 @@ class YtDlpManager {
     }
   }
 
+  /**
+   * YouTube rechaza pedidos de forma intermitente: el mismo video que falla vuelve a andar
+   * al reintentar. Estos son los errores que valen un segundo intento en vez de rendirse.
+   */
+  static isTransient(message) {
+    return /please sign in|sign in to confirm|http error 403|http error 429|unable to download|failed to extract|precondition check failed|not a bot/i.test(
+      message,
+    );
+  }
+
+  /**
+   * Reintenta rotando el cliente de YouTube que usa yt-dlp. Cuando uno queda marcado,
+   * otro suele responder sin pedir autenticación.
+   */
+  async runWithFallback(args, { onLine, onRetry } = {}) {
+    // Secuencia elegida midiendo tasa de éxito sobre un video que fallaba de forma intermitente:
+    // alternar estos dos clientes resolvió 6 de 6 intentos. Otras combinaciones probadas
+    // (tv, web_safari, mweb) fallaron siempre, así que quedaron afuera.
+    const alternate = ["--extractor-args", "youtube:player_client=android_vr,ios,tv_embedded"];
+    const variants = [[], alternate, [], alternate];
+
+    let lastError = null;
+
+    for (let index = 0; index < variants.length; index += 1) {
+      try {
+        return await this.run([...args, ...variants[index]], { onLine });
+      } catch (error) {
+        lastError = error;
+        if (!YtDlpManager.isTransient(error.message) || index === variants.length - 1) break;
+        onRetry?.(index + 1, variants.length);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+      }
+    }
+
+    throw lastError;
+  }
+
   run(args, { onLine } = {}) {
     return new Promise((resolve, reject) => {
       const child = spawn(this.binaryPath, args, { windowsHide: true });

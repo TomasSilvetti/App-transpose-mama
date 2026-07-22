@@ -13,6 +13,12 @@ contextBridge.exposeInMainWorld("transpose", {
     return () => ipcRenderer.off("video:progress", listener);
   },
 
+  onDownloadRetry: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on("video:retry", listener);
+    return () => ipcRenderer.off("video:retry", listener);
+  },
+
   onDownloaderStatus: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("ytdlp:status", listener);

@@ -32,6 +32,9 @@ export type TransposeApi = {
   onDownloadProgress: (
     callback: (payload: { videoId: string; progress: number }) => void,
   ) => () => void;
+  onDownloadRetry: (
+    callback: (payload: { videoId: string; intento: number; total: number }) => void,
+  ) => () => void;
   onDownloaderStatus: (callback: (payload: DownloaderStatus) => void) => () => void;
 };
 
