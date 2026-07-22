@@ -39,6 +39,14 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
       return { saved: true, filePath: "C:/smoke/" + fileName };
     });
 
+    // El diálogo de guardado del video se resuelve solo a una ruta temporal.
+    const { dialog } = require("electron");
+    const smokeVideoPath = require("node:path").join(
+      require("node:os").tmpdir(),
+      "transpose-smoke-video.mp4",
+    );
+    dialog.showSaveDialog = async () => ({ canceled: false, filePath: smokeVideoPath });
+
     win.webContents.on("console-message", (event) => {
       if (event.level === "error") consoleErrors.push(event.message);
     });
@@ -56,8 +64,10 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
           const value = check();
           if (value) return value;
           if (Date.now() - started > timeout) {
-            out.pantallaAlFallar = document.body.innerText.replace(/\\n+/g, " | ").slice(0, 600);
-            throw new Error("timeout esperando " + label);
+            const error = new Error("timeout esperando " + label);
+            error.pasos = out.steps;
+            error.pantalla = document.body.innerText.replace(/\\n+/g, " | ").slice(0, 600);
+            throw error;
           }
           await wait(250);
         }
@@ -72,11 +82,24 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
       log("hidratacion", "ok");
 
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
-      setter.call(input, ${JSON.stringify(SMOKE_URL)});
-      input.dispatchEvent(new Event("input", { bubbles: true }));
-      await wait(300);
-      document.querySelector("form").requestSubmit();
-      log("submit", "enviado con valor=" + (input.value ? "si" : "NO"));
+
+      // El formulario puede no estar escuchando aunque React ya haya hidratado, así que
+      // se reintenta hasta que el envío prospere en vez de fallar por una carrera.
+      let intentos = 0;
+      for (;;) {
+        intentos += 1;
+        setter.call(input, ${JSON.stringify(SMOKE_URL)});
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await wait(400);
+        document.querySelector("form").requestSubmit();
+        await wait(1200);
+
+        const rechazado = [...document.querySelectorAll('[role="alert"]')].some((n) =>
+          n.textContent.includes("Pegá un link"));
+        if (!rechazado) break;
+        if (intentos >= 8) throw new Error("el formulario nunca aceptó el link");
+      }
+      log("submit", "aceptado en intento " + intentos);
 
       await until("portada", () => document.querySelector("img[alt^='Portada']"));
       log("portada", document.querySelector("img[alt^='Portada']").alt);
@@ -139,6 +162,32 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
         document.body.innerText.includes("Mostrar en la carpeta"), 240000);
       log("mp3", "guardado");
 
+      // Exportar video descarga ffmpeg la primera vez, así que se le da margen amplio.
+      const videoBtn = [...document.querySelectorAll("button")]
+        .find((b) => b.textContent.includes("Descargar video"));
+      if (!videoBtn || videoBtn.disabled) {
+        log("export video", "BOTON NO DISPONIBLE");
+        return out;
+      }
+
+      videoBtn.click();
+      log("export video", "disparado");
+
+      // Al arrancar una exportación se limpia el aviso de guardado anterior; cuando reaparece,
+      // es porque esta terminó y escribió el archivo.
+      const sinAviso = () => !document.body.innerText.includes("Mostrar en la carpeta");
+      const falla = () => {
+        const alerta = [...document.querySelectorAll('[role="alert"]')]
+          .map((n) => n.textContent).join(" ");
+        if (alerta.trim()) throw new Error("error en pantalla: " + alerta.slice(0, 300));
+      };
+
+      await until("inicio de la exportacion de video", () => { falla(); return sinAviso(); }, 60000);
+      log("exportacion arrancada", document.body.innerText.match(/conversor[^.]*/i)?.[0] ?? "sin descarga de ffmpeg");
+
+      await until("video exportado", () => { falla(); return !sinAviso(); }, 900000);
+      log("video exportado", "listo");
+
       return out;
     })()`;
 
@@ -156,6 +205,39 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
         kb: Math.round(bytes.length / 1024),
         cabeceraValida: bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0,
       };
+    }
+
+    try {
+      const stat = fs.statSync(smokeVideoPath);
+      const head = Buffer.alloc(12);
+      const fd = fs.openSync(smokeVideoPath, "r");
+      fs.readSync(fd, head, 0, 12, 0);
+      fs.closeSync(fd);
+      result.video = {
+        mb: (stat.size / 1048576).toFixed(1),
+        contenedorMp4: head.subarray(4, 8).toString() === "ftyp",
+      };
+
+      // El video se descarga sin pista de audio, así que si el MP4 tiene una,
+      // necesariamente es la que generó el motor de transposición.
+      const probe = require("node:path").join(app.getPath("userData"), "ffmpeg", "ffprobe.exe");
+      if (fs.existsSync(probe)) {
+        const out = require("node:child_process").execFileSync(
+          probe,
+          ["-v", "error", "-show_entries", "stream=codec_type,codec_name,duration,channels",
+           "-of", "json", smokeVideoPath],
+          { encoding: "utf8" },
+        );
+        result.video.pistas = JSON.parse(out).streams.map(
+          (s) => `${s.codec_type}/${s.codec_name}` +
+                 (s.channels ? ` ${s.channels}ch` : "") +
+                 (s.duration ? ` ${Number(s.duration).toFixed(1)}s` : ""),
+        );
+      }
+
+      fs.rmSync(smokeVideoPath, { force: true });
+    } catch {
+      result.video = "no se generó archivo";
     }
 
     if (consoleErrors.length) result.erroresDeConsola = consoleErrors;

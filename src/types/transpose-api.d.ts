@@ -5,6 +5,12 @@ export type DownloaderStatus =
   | { phase: "ready"; version: string | null; updated: boolean; warning: string | null }
   | { phase: "error"; message: string };
 
+export type ExportStatus = {
+  phase: "preparing" | "downloading" | "extracting" | "encoding" | "done";
+  message: string;
+  progress?: number;
+};
+
 export type TransposeApi = {
   ensureDownloader: () => Promise<{ version: string | null; warning: string | null }>;
   loadVideo: (
@@ -15,7 +21,14 @@ export type TransposeApi = {
     fileName: string,
     data: ArrayBuffer,
   ) => Promise<{ saved: boolean; filePath?: string }>;
+  exportVideo: (payload: {
+    fileName: string;
+    wav: ArrayBuffer;
+    tempo: number;
+    durationSeconds: number;
+  }) => Promise<{ saved: boolean; filePath?: string }>;
   revealFile: (filePath: string) => Promise<void>;
+  onExportStatus: (callback: (payload: ExportStatus) => void) => () => void;
   onDownloadProgress: (
     callback: (payload: { videoId: string; progress: number }) => void,
   ) => () => void;

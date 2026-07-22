@@ -6,6 +6,7 @@ const path = require("node:path");
 const { YtDlpManager } = require("./ytdlp");
 const { startStaticServer } = require("./static-server");
 const { MediaServer } = require("./media-server");
+const { FfmpegManager } = require("./ffmpeg");
 
 // El smoke corre sin empaquetar pero debe ejercer la UI compilada, no el dev server.
 const isDev = !app.isPackaged && process.env.TRANSPOSE_SMOKE !== "1";
@@ -13,8 +14,11 @@ const DEV_URL = "http://localhost:3000";
 
 let mainWindow = null;
 let ytdlp = null;
+let ffmpeg = null;
 let readyPromise = null;
 const media = new MediaServer();
+// Ruta del video de la canción abierta, necesaria para exportarlo con el audio nuevo.
+let currentVideoFile = null;
 
 const VIDEO_ID = /^[\w-]{11}$/;
 
@@ -107,6 +111,7 @@ function createWindow(appUrl) {
 
 app.whenReady().then(async () => {
   ytdlp = new YtDlpManager(app.getPath("userData"));
+  ffmpeg = new FfmpegManager(app.getPath("userData"));
   const appUrl = await resolveAppUrl();
   createWindow(appUrl);
   void ensureYtDlp().catch(() => {});
@@ -177,9 +182,11 @@ ipcMain.handle("video:load", async (_event, videoId, quality = "720") => {
     const buffer = await fs.readFile(path.join(workDir, audioFile));
 
     let videoUrl = null;
+    currentVideoFile = null;
     if (videoFile) {
       await media.start();
-      videoUrl = media.publish(path.join(workDir, videoFile));
+      currentVideoFile = path.join(workDir, videoFile);
+      videoUrl = media.publish(currentVideoFile);
       keepFiles = true;
     }
 
@@ -215,6 +222,76 @@ ipcMain.handle("file:save-mp3", async (_event, { fileName, data }) => {
 
 ipcMain.handle("file:reveal", async (_event, filePath) => {
   shell.showItemInFolder(filePath);
+});
+
+/** Duración en segundos que tendrá el audio ya procesado, para no cortar el video de más. */
+function parseFfmpegTime(line) {
+  const match = line.match(/time=(\d+):(\d+):(\d+\.?\d*)/);
+  if (!match) return null;
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+ipcMain.handle("video:export", async (_event, { fileName, wav, tempo, durationSeconds }) => {
+  if (!currentVideoFile) {
+    throw new Error("Esta canción se abrió sin video. Elegí una calidad de video y volvé a cargarla.");
+  }
+
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: "Guardar video",
+    defaultPath: path.join(app.getPath("videos"), fileName),
+    filters: [{ name: "Video MP4", extensions: ["mp4"] }],
+  });
+  if (result.canceled || !result.filePath) return { saved: false };
+
+  await ffmpeg.ensureReady((status) => send("export:status", status));
+
+  const workDir = await fs.mkdtemp(path.join(os.tmpdir(), "transpose-export-"));
+  const audioPath = path.join(workDir, "audio.wav");
+
+  try {
+    await fs.writeFile(audioPath, Buffer.from(wav));
+
+    const args = ["-y", "-i", currentVideoFile, "-i", audioPath, "-map", "0:v:0", "-map", "1:a:0"];
+
+    if (tempo === 1) {
+      // Sin cambio de velocidad el video sirve tal cual: copiarlo evita recomprimirlo.
+      args.push("-c:v", "copy");
+    } else {
+      // Al cambiar la velocidad el audio dura distinto, así que el video se reajusta con él.
+      args.push(
+        "-filter:v",
+        `setpts=PTS/${tempo}`,
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+      );
+    }
+
+    args.push("-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", result.filePath);
+
+    send("export:status", { phase: "encoding", message: "Uniendo video y audio…", progress: 0 });
+
+    await ffmpeg.run(args, {
+      onLine: (line) => {
+        const seconds = parseFfmpegTime(line);
+        if (seconds !== null && durationSeconds > 0) {
+          send("export:status", {
+            phase: "encoding",
+            message: "Uniendo video y audio…",
+            progress: Math.min(0.99, seconds / durationSeconds),
+          });
+        }
+      },
+    });
+
+    send("export:status", { phase: "done", message: "Listo", progress: 1 });
+    return { saved: true, filePath: result.filePath };
+  } finally {
+    await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
 });
 
 if (process.env.TRANSPOSE_SMOKE === "1") require("./smoke")({ app, BrowserWindow, ipcMain });

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
-import { AlertCircle, Download, FolderOpen, Loader2, Music2 } from "lucide-react";
+import { AlertCircle, Download, Film, FolderOpen, Loader2, Music2 } from "lucide-react";
 
 import { QualityPicker } from "@/components/quality-picker";
 import { SongLibrary } from "@/components/song-library";
@@ -12,7 +12,7 @@ import { TransposeControls } from "@/components/transpose-controls";
 import { UrlForm } from "@/components/url-form";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useMp3Export } from "@/hooks/use-mp3-export";
+import { useExport, type ExportTarget } from "@/hooks/use-export";
 import { useTransposePlayer } from "@/hooks/use-transpose-player";
 import { formatSemitones, formatTime } from "@/lib/utils";
 import {
@@ -45,13 +45,15 @@ export function TransposeStudio() {
 
   const player = useTransposePlayer(audioData);
   const {
-    exportMp3,
+    runExport,
     isExporting,
     progress: exportProgress,
+    status: exportStatus,
     error: exportError,
     savedPath,
     revealSaved,
-  } = useMp3Export();
+    target: exportTarget,
+  } = useExport();
 
   const { setSemitones, setTempo, isReady } = player;
 
@@ -161,14 +163,15 @@ export function TransposeStudio() {
     }
   };
 
-  const handleDownload = () => {
+  const handleDownload = (destination: ExportTarget) => {
     const buffer = player.buffer.current;
     if (!buffer || !video) return;
-    exportMp3({
+    runExport({
       buffer,
       semitones: player.semitones,
       tempo: player.tempo,
       fileName: `${video.title} (${formatSemitones(player.semitones)} st)`,
+      target: destination,
     });
   };
 
@@ -342,23 +345,46 @@ export function TransposeStudio() {
               <CardContent className="flex flex-col gap-3">
                 <Button
                   variant="primary"
-                  onClick={handleDownload}
+                  onClick={() => handleDownload("mp3")}
                   disabled={controlsDisabled || isExporting}
                 >
-                  {isExporting ? (
+                  {isExporting && exportTarget === "mp3" ? (
                     <Loader2 className="size-4 animate-spin" aria-hidden />
                   ) : (
                     <Download className="size-4" aria-hidden />
                   )}
-                  {isExporting ? `Generando ${Math.round(exportProgress * 100)}%` : "Descargar MP3"}
+                  {isExporting && exportTarget === "mp3"
+                    ? `Generando ${Math.round(exportProgress * 100)}%`
+                    : "Descargar MP3"}
+                </Button>
+
+                <Button
+                  variant="secondary"
+                  onClick={() => handleDownload("video")}
+                  disabled={controlsDisabled || isExporting || !videoUrl}
+                  title={videoUrl ? undefined : "Cargá la canción con video para poder guardarlo"}
+                >
+                  {isExporting && exportTarget === "video" ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Film className="size-4" aria-hidden />
+                  )}
+                  {isExporting && exportTarget === "video"
+                    ? `Generando ${Math.round(exportProgress * 100)}%`
+                    : "Descargar video"}
                 </Button>
 
                 {isExporting ? (
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-border-subtle">
-                    <div
-                      className="h-full rounded-full bg-accent transition-[width] duration-200"
-                      style={{ width: `${Math.round(exportProgress * 100)}%` }}
-                    />
+                  <div className="flex flex-col gap-1.5">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-border-subtle">
+                      <div
+                        className="h-full rounded-full bg-accent transition-[width] duration-200"
+                        style={{ width: `${Math.round(exportProgress * 100)}%` }}
+                      />
+                    </div>
+                    {exportStatus ? (
+                      <p className="text-xs text-ink-muted">{exportStatus}</p>
+                    ) : null}
                   </div>
                 ) : null}
 
@@ -376,8 +402,8 @@ export function TransposeStudio() {
                 ) : null}
 
                 <p className="text-xs text-ink-muted">
-                  El MP3 se genera con el tono y la velocidad que elegiste, y suena igual a lo que
-                  venís practicando.
+                  Se generan con el tono y la velocidad que elegiste, y suenan igual a lo que venís
+                  practicando. La primera vez que guardes un video se descarga el conversor.
                 </p>
               </CardContent>
             </Card>

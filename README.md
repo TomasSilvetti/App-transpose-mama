@@ -13,6 +13,7 @@ practicás con el audio ya transportado y lo descargás en MP3 con los cambios i
 - **Controles de reproducción**: play/pausa, ±10 segundos, volver al inicio, barra de posición y volumen.
 - **Descarga en MP3** con el tono y la velocidad elegidos. Suena exactamente igual a lo que se
   venía practicando, porque reproducción y exportación usan el mismo motor de audio.
+- **Descarga en MP4** con el video y el audio ya transportado, para practicar la letra fuera de la app.
 - **Historial en localStorage**: cada canción recuerda el tono con el que se practicó.
 
 ## Por qué es de escritorio y no una web
@@ -36,6 +37,19 @@ YouTube cambia seguido y `yt-dlp` publica parches cada pocos días. La app se en
 - Si hay una nueva, la descarga antes de habilitar el botón de cargar canciones.
 - El binario vive en la carpeta de datos del usuario, no requiere permisos de administrador.
 - Si no hay internet o GitHub falla, sigue usando la versión ya descargada en vez de quedar inutilizable.
+
+## Binarios externos
+
+Ninguno viaja dentro del instalador: se descargan a la carpeta de datos del usuario cuando hacen
+falta, sin permisos de administrador.
+
+| Binario | Cuándo se descarga | Peso |
+|---|---|---|
+| `yt-dlp` | Al abrir la app | ~18 MB |
+| `ffmpeg` | La primera vez que se guarda un video | ~73 MB |
+
+Quien solo use MP3 nunca descarga `ffmpeg`. Empaquetarlo habría sumado esos megas al instalador de
+todos, y `yt-dlp` además necesita actualizarse por su cuenta.
 
 ## Desarrollo
 
@@ -102,6 +116,10 @@ Decisiones que conviene no revertir sin entender el motivo:
   al instalador. El `<video>` va mudo y sigue el reloj del audio.
 - **El video se sirve por HTTP local, no por IPC.** Mandarlo como `ArrayBuffer` cargaría decenas de
   megabytes en memoria y perdería el seek nativo.
+- **Al exportar video, el audio viaja como WAV.** Mandarlo ya comprimido obligaría a `ffmpeg` a
+  recomprimirlo, sumando una segunda pérdida. Así hay una sola compresión, la final a AAC.
+- **Sin cambio de velocidad el video se copia sin recomprimir** (`-c:v copy`), que es instantáneo.
+  Solo cuando el tempo cambia hay que reajustar los tiempos con `setpts` y volver a codificar.
 
 ## Uso personal
 
