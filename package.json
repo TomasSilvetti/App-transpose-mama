@@ -44,7 +44,8 @@
       {
         "provider": "github",
         "owner": "TomasSilvetti",
-        "repo": "App-transpose-mama"
+        "repo": "App-transpose-mama",
+        "releaseType": "release"
       }
     ]
   },
