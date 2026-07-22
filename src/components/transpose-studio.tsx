@@ -11,6 +11,7 @@ import { TransportControls } from "@/components/transport-controls";
 import { TransposeControls } from "@/components/transpose-controls";
 import { UpdateBanner } from "@/components/update-banner";
 import { UrlForm } from "@/components/url-form";
+import { VersionBar } from "@/components/version-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useExport, type ExportTarget } from "@/hooks/use-export";
@@ -451,6 +452,8 @@ export function TransposeStudio() {
           </Card>
         </aside>
       </div>
+
+      <VersionBar />
     </div>
   );
 }

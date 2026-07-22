@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld("transpose", {
   exportVideo: (payload) => ipcRenderer.invoke("video:export", payload),
   revealFile: (filePath) => ipcRenderer.invoke("file:reveal", filePath),
   getAppVersion: () => ipcRenderer.invoke("app:version"),
+  getUpdateStatus: () => ipcRenderer.invoke("update:status"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
 
   onUpdateStatus: (callback) => {

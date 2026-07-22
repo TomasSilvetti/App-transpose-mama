@@ -261,6 +261,8 @@ ipcMain.handle("file:reveal", async (_event, filePath) => {
 
 ipcMain.handle("app:version", () => app.getVersion());
 
+ipcMain.handle("update:status", () => updater?.getStatus() ?? { phase: "none" });
+
 ipcMain.handle("update:install", () => {
   updater?.installNow();
 });

@@ -37,6 +37,7 @@ export type TransposeApi = {
   }) => Promise<{ saved: boolean; filePath?: string }>;
   revealFile: (filePath: string) => Promise<void>;
   getAppVersion: () => Promise<string>;
+  getUpdateStatus: () => Promise<UpdateStatus>;
   installUpdate: () => Promise<void>;
   onExportStatus: (callback: (payload: ExportStatus) => void) => () => void;
   onUpdateStatus: (callback: (payload: UpdateStatus) => void) => () => void;
