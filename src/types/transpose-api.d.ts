@@ -19,6 +19,30 @@ export type UpdateStatus =
   | { phase: "none" }
   | { phase: "error"; message: string };
 
+/** Una canción presente en la carpeta de descargas. */
+export type DownloadedSong = {
+  fileName: string;
+  kind: "audio" | "video";
+  sizeBytes: number;
+  downloadedAt: string;
+  title: string;
+  author: string;
+  thumbnail: string | null;
+  videoId: string | null;
+  semitones: number;
+  tempo: number;
+};
+
+/** Datos que el archivo no guarda por sí solo y que la biblioteca recuerda aparte. */
+export type DownloadMeta = {
+  videoId: string | null;
+  title: string;
+  author: string;
+  thumbnail: string | null;
+  semitones: number;
+  tempo: number;
+};
+
 export type TransposeApi = {
   ensureDownloader: () => Promise<{ version: string | null; warning: string | null }>;
   loadVideo: (
@@ -28,14 +52,24 @@ export type TransposeApi = {
   saveMp3: (
     fileName: string,
     data: ArrayBuffer,
-  ) => Promise<{ saved: boolean; filePath?: string }>;
+    meta: DownloadMeta,
+  ) => Promise<{ saved: boolean; filePath?: string; fileName?: string }>;
   exportVideo: (payload: {
     fileName: string;
     wav: ArrayBuffer;
     tempo: number;
     durationSeconds: number;
-  }) => Promise<{ saved: boolean; filePath?: string }>;
+    meta: DownloadMeta;
+  }) => Promise<{ saved: boolean; filePath?: string; fileName?: string }>;
   revealFile: (filePath: string) => Promise<void>;
+
+  listDownloads: () => Promise<DownloadedSong[]>;
+  openDownload: (
+    fileName: string,
+  ) => Promise<{ info: VideoInfo; audio: ArrayBuffer; videoUrl: string | null }>;
+  removeDownload: (fileName: string) => Promise<DownloadedSong[]>;
+  revealDownload: (fileName: string) => Promise<void>;
+  openDownloadsFolder: () => Promise<void>;
   getAppVersion: () => Promise<string>;
   getUpdateStatus: () => Promise<UpdateStatus>;
   installUpdate: () => Promise<void>;

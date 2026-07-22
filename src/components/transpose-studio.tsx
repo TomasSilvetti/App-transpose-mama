@@ -18,16 +18,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useExport, type ExportTarget } from "@/hooks/use-export";
 import { useTransposePlayer } from "@/hooks/use-transpose-player";
 import { formatSemitones, formatTime } from "@/lib/utils";
-import {
-  readLibrary,
-  readQuality,
-  removeSong,
-  upsertSong,
-  writeQuality,
-  type SavedSong,
-} from "@/lib/storage";
+import { readQuality, writeQuality } from "@/lib/storage";
 import { videoInfoSchema, type VideoInfo, type VideoQuality } from "@/lib/youtube";
-import type { DownloaderStatus } from "@/types/transpose-api";
+import type { DownloadedSong, DownloaderStatus } from "@/types/transpose-api";
 
 /** Miniatura pública de YouTube: permite mostrar la portada sin esperar la descarga. */
 function thumbnailFor(videoId: string) {
@@ -41,7 +34,8 @@ function cleanErrorMessage(error: unknown) {
 }
 
 export function TransposeStudio() {
-  const [library, setLibrary] = useState<SavedSong[]>([]);
+  const [library, setLibrary] = useState<DownloadedSong[]>([]);
+  const [activeFileName, setActiveFileName] = useState<string | null>(null);
   const [video, setVideo] = useState<VideoInfo | null>(null);
   const [audioData, setAudioData] = useState<ArrayBuffer | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -53,6 +47,14 @@ export function TransposeStudio() {
   const [downloader, setDownloader] = useState<DownloaderStatus | null>(null);
   const pendingSettings = useRef<{ semitones: number; tempo: number } | null>(null);
 
+  const refreshLibrary = useCallback(async () => {
+    try {
+      setLibrary((await window.transpose?.listDownloads()) ?? []);
+    } catch {
+      // Si la carpeta no se puede leer, la app sigue andando sin la biblioteca.
+    }
+  }, []);
+
   const player = useTransposePlayer(audioData);
   const {
     runExport,
@@ -63,16 +65,16 @@ export function TransposeStudio() {
     savedPath,
     revealSaved,
     target: exportTarget,
-  } = useExport();
+  } = useExport(() => void refreshLibrary());
 
   const { setSemitones, setTempo, isReady } = player;
 
   useEffect(() => {
     // localStorage no existe durante el prerender: leerlo antes rompería la hidratación.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLibrary(readLibrary());
     setQuality(readQuality());
-  }, []);
+    void refreshLibrary();
+  }, [refreshLibrary]);
 
   const handleQualityChange = useCallback((value: VideoQuality) => {
     setQuality(value);
@@ -118,6 +120,7 @@ export function TransposeStudio() {
       setDownloadProgress(0);
       setAudioData(null);
       setVideoUrl(null);
+      setActiveFileName(null);
       pendingSettings.current = settings ?? { semitones: 0, tempo: 1 };
 
       // La portada aparece de inmediato; el resto de la ficha llega con la descarga.
@@ -139,14 +142,6 @@ export function TransposeStudio() {
         setVideo(parsed);
         setAudioData(audio);
         setVideoUrl(url);
-        setLibrary(
-          upsertSong({
-            ...parsed,
-            semitones: settings?.semitones ?? 0,
-            tempo: settings?.tempo ?? 1,
-            savedAt: new Date().toISOString(),
-          }),
-        );
       } catch (error) {
         setVideo(null);
         setLoadError(cleanErrorMessage(error));
@@ -158,24 +153,54 @@ export function TransposeStudio() {
     [quality],
   );
 
-  // Persistir los ajustes en cuanto el usuario los toca, para reencontrarlos la próxima vez.
-  useEffect(() => {
-    if (!video || !isReady || pendingSettings.current) return;
-    setLibrary(
-      upsertSong({
-        ...video,
-        semitones: player.semitones,
-        tempo: player.tempo,
-        savedAt: new Date().toISOString(),
-      }),
-    );
-  }, [video, isReady, player.semitones, player.tempo]);
+  /** Abre una canción ya descargada leyéndola del disco, sin volver a pasar por YouTube. */
+  const openDownloaded = useCallback(async (song: DownloadedSong) => {
+    setIsLoading(true);
+    setLoadError(null);
+    setRetryNotice(null);
+    setDownloadProgress(0);
+    setAudioData(null);
+    setVideoUrl(null);
+    setActiveFileName(song.fileName);
+    pendingSettings.current = { semitones: song.semitones, tempo: song.tempo };
 
-  const handleRemove = (videoId: string) => {
-    setLibrary(removeSong(videoId));
-    if (video?.videoId === videoId) {
+    setVideo({
+      videoId: song.videoId ?? song.fileName,
+      title: song.title,
+      author: song.author,
+      thumbnail: song.thumbnail,
+      duration: 0,
+    });
+
+    try {
+      const api = window.transpose;
+      if (!api) throw new Error("Esta pantalla necesita ejecutarse dentro de la app de escritorio.");
+
+      const { info, audio, videoUrl: url } = await api.openDownload(song.fileName);
+      setVideo(videoInfoSchema.parse(info));
+      setAudioData(audio);
+      setVideoUrl(url);
+    } catch (error) {
+      setVideo(null);
+      setActiveFileName(null);
+      setLoadError(cleanErrorMessage(error));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  const handleRemove = async (fileName: string) => {
+    try {
+      setLibrary((await window.transpose?.removeDownload(fileName)) ?? []);
+    } catch (error) {
+      setLoadError(cleanErrorMessage(error));
+      return;
+    }
+    if (activeFileName === fileName) {
+      setActiveFileName(null);
       setVideo(null);
       setAudioData(null);
+      setVideoUrl(null);
     }
   };
 
@@ -188,6 +213,14 @@ export function TransposeStudio() {
       tempo: player.tempo,
       fileName: `${video.title} (${formatSemitones(player.semitones)} st)`,
       target: destination,
+      meta: {
+        videoId: video.videoId,
+        title: video.title,
+        author: video.author,
+        thumbnail: video.thumbnail,
+        semitones: player.semitones,
+        tempo: player.tempo,
+      },
     });
   };
 
@@ -261,7 +294,7 @@ export function TransposeStudio() {
                     isPlaying={player.isPlaying}
                     tempo={player.tempo}
                   />
-                ) : (
+                ) : video.thumbnail ? (
                   <Image
                     src={video.thumbnail}
                     alt={`Portada de ${video.title}`}
@@ -271,6 +304,10 @@ export function TransposeStudio() {
                     className="object-cover"
                     priority
                   />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center">
+                    <Music2 className="size-10 text-ink-muted" aria-hidden />
+                  </div>
                 )}
 
                 {/* Con el video visible la letra importa más que el título: no se tapa. */}
@@ -423,8 +460,9 @@ export function TransposeStudio() {
                 ) : null}
 
                 <p className="text-xs text-ink-muted">
-                  Se generan con el tono y la velocidad que elegiste, y suenan igual a lo que venís
-                  practicando. La primera vez que guardes un video se descarga el conversor.
+                  Se generan con el tono y la velocidad que elegiste, y quedan guardadas en la
+                  carpeta Música → Transpose, listas para abrirlas desde «Descargadas». La primera
+                  vez que guardes un video se descarga el conversor.
                 </p>
               </CardContent>
             </Card>
@@ -441,16 +479,15 @@ export function TransposeStudio() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Mis canciones</CardTitle>
+              <CardTitle>Descargadas</CardTitle>
             </CardHeader>
             <CardContent>
               <SongLibrary
                 songs={library}
-                activeVideoId={video?.videoId ?? null}
-                onSelect={(song) =>
-                  void loadVideo(song.videoId, { semitones: song.semitones, tempo: song.tempo })
-                }
-                onRemove={handleRemove}
+                activeFileName={activeFileName}
+                onSelect={(song) => void openDownloaded(song)}
+                onRemove={(fileName) => void handleRemove(fileName)}
+                onOpenFolder={() => void window.transpose?.openDownloadsFolder()}
               />
             </CardContent>
           </Card>

@@ -45,7 +45,8 @@ export const videoInfoSchema = z.object({
   videoId: z.string(),
   title: z.string(),
   author: z.string(),
-  thumbnail: z.string(),
+  // Las canciones abiertas desde la carpeta de descargas pueden no tener portada.
+  thumbnail: z.string().nullable(),
   duration: z.number(),
 });
 

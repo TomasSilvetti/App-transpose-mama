@@ -7,7 +7,7 @@ const SMOKE_URL = process.env.TRANSPOSE_SMOKE_URL || "https://www.youtube.com/wa
 
 const fs = require("node:fs");
 
-module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
+module.exports = function runSmoke({ app, BrowserWindow }) {
   const report = (payload) => {
     const text = JSON.stringify(payload, null, 2);
     console.log("\n===== SMOKE =====\n" + text + "\n=================\n");
@@ -30,22 +30,23 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
     }
 
     const consoleErrors = [];
-    let savedMp3 = null;
 
-    // Reemplaza el diálogo nativo, que bloquearía la corrida sin intervención.
-    ipcMain.removeHandler("file:save-mp3");
-    ipcMain.handle("file:save-mp3", (_event, { fileName, data }) => {
-      savedMp3 = { fileName, bytes: Buffer.from(data) };
-      return { saved: true, filePath: "C:/smoke/" + fileName };
-    });
+    // Ya no hay diálogos nativos que mockear: las descargas van solas a la carpeta fija,
+    // así que el smoke verifica los archivos reales que quedan ahí.
+    const nodePath = require("node:path");
+    const downloadsDir = nodePath.join(app.getPath("music"), "Transpose");
 
-    // El diálogo de guardado del video se resuelve solo a una ruta temporal.
-    const { dialog } = require("electron");
-    const smokeVideoPath = require("node:path").join(
-      require("node:os").tmpdir(),
-      "transpose-smoke-video.mp4",
-    );
-    dialog.showSaveDialog = async () => ({ canceled: false, filePath: smokeVideoPath });
+    /** Archivo más reciente con esa extensión, para identificar el que dejó esta corrida. */
+    const latestDownload = (extension) => {
+      let newest = null;
+      for (const name of fs.readdirSync(downloadsDir)) {
+        if (!name.toLowerCase().endsWith(extension)) continue;
+        const filePath = nodePath.join(downloadsDir, name);
+        const stat = fs.statSync(filePath);
+        if (!newest || stat.mtimeMs > newest.stat.mtimeMs) newest = { name, filePath, stat };
+      }
+      return newest;
+    };
 
     win.webContents.on("console-message", (event) => {
       if (event.level === "error") consoleErrors.push(event.message);
@@ -162,6 +163,11 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
         document.body.innerText.includes("Mostrar en la carpeta"), 240000);
       log("mp3", "guardado");
 
+      // La descarga tiene que aparecer sola en la biblioteca, que se lee del disco.
+      const enBiblioteca = await until("cancion en Descargadas", () =>
+        [...document.querySelectorAll("button[aria-label^='Borrar ']")].length, 30000);
+      log("biblioteca", enBiblioteca + " cancion(es) listadas");
+
       // Exportar video descarga ffmpeg la primera vez, así que se le da margen amplio.
       const videoBtn = [...document.querySelectorAll("button")]
         .find((b) => b.textContent.includes("Descargar video"));
@@ -198,22 +204,28 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
         .catch(() => null),
     }));
 
+    const savedMp3 = latestDownload(".mp3");
     if (savedMp3) {
-      const { bytes } = savedMp3;
+      const head = Buffer.alloc(2);
+      const fd = fs.openSync(savedMp3.filePath, "r");
+      fs.readSync(fd, head, 0, 2, 0);
+      fs.closeSync(fd);
       result.mp3 = {
-        nombre: savedMp3.fileName,
-        kb: Math.round(bytes.length / 1024),
-        cabeceraValida: bytes[0] === 0xff && (bytes[1] & 0xe0) === 0xe0,
+        nombre: savedMp3.name,
+        kb: Math.round(savedMp3.stat.size / 1024),
+        cabeceraValida: head[0] === 0xff && (head[1] & 0xe0) === 0xe0,
       };
     }
 
     try {
-      const stat = fs.statSync(smokeVideoPath);
+      const savedVideo = latestDownload(".mp4");
+      const stat = savedVideo.stat;
       const head = Buffer.alloc(12);
-      const fd = fs.openSync(smokeVideoPath, "r");
+      const fd = fs.openSync(savedVideo.filePath, "r");
       fs.readSync(fd, head, 0, 12, 0);
       fs.closeSync(fd);
       result.video = {
+        nombre: savedVideo.name,
         mb: (stat.size / 1048576).toFixed(1),
         contenedorMp4: head.subarray(4, 8).toString() === "ftyp",
       };
@@ -225,7 +237,7 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
         const out = require("node:child_process").execFileSync(
           probe,
           ["-v", "error", "-show_entries", "stream=codec_type,codec_name,duration,channels",
-           "-of", "json", smokeVideoPath],
+           "-of", "json", savedVideo.filePath],
           { encoding: "utf8" },
         );
         result.video.pistas = JSON.parse(out).streams.map(
@@ -235,7 +247,7 @@ module.exports = function runSmoke({ app, BrowserWindow, ipcMain }) {
         );
       }
 
-      fs.rmSync(smokeVideoPath, { force: true });
+      // El archivo queda en la biblioteca: es una descarga real, no un temporal del smoke.
     } catch {
       result.video = "no se generó archivo";
     }

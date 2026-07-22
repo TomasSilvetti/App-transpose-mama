@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
@@ -7,15 +7,17 @@ const { YtDlpManager } = require("./ytdlp");
 const { startStaticServer } = require("./static-server");
 const { MediaServer } = require("./media-server");
 const { FfmpegManager } = require("./ffmpeg");
+const { DownloadsLibrary } = require("./downloads");
 const { setupUpdater } = require("./updater");
 
 // El smoke corre sin empaquetar pero debe ejercer la UI compilada, no el dev server.
-const isDev = !app.isPackaged && process.env.TRANSPOSE_SMOKE !== "1";
+const isDev = !app.isPackaged && process.env.TRANSPOSE_SMOKE !== "1" && process.env.PROBE_SHARE !== "1";
 const DEV_URL = "http://localhost:3000";
 
 let mainWindow = null;
 let ytdlp = null;
 let ffmpeg = null;
+let downloads = null;
 let updater = null;
 let readyPromise = null;
 const media = new MediaServer();
@@ -114,6 +116,11 @@ function createWindow(appUrl) {
 app.whenReady().then(async () => {
   ytdlp = new YtDlpManager(app.getPath("userData"));
   ffmpeg = new FfmpegManager(app.getPath("userData"));
+  downloads = new DownloadsLibrary({
+    musicPath: app.getPath("music"),
+    userDataPath: app.getPath("userData"),
+  });
+  await downloads.ensureDir().catch(() => {});
   const appUrl = await resolveAppUrl();
   createWindow(appUrl);
   void ensureYtDlp().catch(() => {});
@@ -242,21 +249,81 @@ ipcMain.handle("video:load", async (_event, videoId, quality = "720") => {
   }
 });
 
-ipcMain.handle("file:save-mp3", async (_event, { fileName, data }) => {
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: "Guardar MP3",
-    defaultPath: path.join(app.getPath("music"), fileName),
-    filters: [{ name: "MP3", extensions: ["mp3"] }],
-  });
-
-  if (result.canceled || !result.filePath) return { saved: false };
-
-  await fs.writeFile(result.filePath, Buffer.from(data));
-  return { saved: true, filePath: result.filePath };
+ipcMain.handle("file:save-mp3", async (_event, { fileName, data, meta }) => {
+  const target = await downloads.resolveTarget(fileName);
+  await fs.writeFile(target.filePath, Buffer.from(data));
+  await downloads.record(target.fileName, meta ?? {});
+  return { saved: true, filePath: target.filePath, fileName: target.fileName };
 });
 
 ipcMain.handle("file:reveal", async (_event, filePath) => {
   shell.showItemInFolder(filePath);
+});
+
+ipcMain.handle("downloads:list", () => downloads.list());
+
+ipcMain.handle("downloads:remove", async (_event, fileName) => {
+  await downloads.remove(fileName);
+  return downloads.list();
+});
+
+ipcMain.handle("downloads:reveal", async (_event, fileName) => {
+  shell.showItemInFolder(downloads.resolveExisting(fileName));
+});
+
+ipcMain.handle("downloads:open-folder", async () => {
+  await downloads.ensureDir();
+  await shell.openPath(downloads.dir);
+});
+
+/**
+ * Abre una canción ya descargada sin volver a pasar por YouTube. El reproductor necesita
+ * el audio suelto para transportarlo, así que de los MP4 se extrae la pista con ffmpeg
+ * mientras el archivo original se sirve como video.
+ */
+ipcMain.handle("downloads:open", async (_event, fileName) => {
+  const filePath = downloads.resolveExisting(fileName);
+  await fs.access(filePath).catch(() => {
+    throw new Error("Este archivo ya no está en la carpeta de descargas.");
+  });
+
+  await media.clear();
+  currentVideoFile = null;
+
+  const isVideo = /\.mp4$/i.test(fileName);
+  let audioPath = filePath;
+  let workDir = null;
+  let videoUrl = null;
+
+  if (isVideo) {
+    await ffmpeg.ensureReady((status) => send("export:status", status));
+    workDir = await fs.mkdtemp(path.join(os.tmpdir(), "transpose-local-"));
+    audioPath = path.join(workDir, "audio.m4a");
+    await ffmpeg.run(["-y", "-i", filePath, "-vn", "-c:a", "copy", audioPath]);
+
+    await media.start();
+    currentVideoFile = filePath;
+    videoUrl = media.publish(filePath, { temporary: false });
+  }
+
+  try {
+    const buffer = await fs.readFile(audioPath);
+    const entry = (await downloads.list()).find((song) => song.fileName === fileName);
+
+    return {
+      info: {
+        videoId: entry?.videoId ?? fileName,
+        title: entry?.title ?? fileName,
+        author: entry?.author ?? "",
+        thumbnail: entry?.thumbnail ?? null,
+        duration: 0,
+      },
+      audio: buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),
+      videoUrl,
+    };
+  } finally {
+    if (workDir) await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
+  }
 });
 
 ipcMain.handle("app:version", () => app.getVersion());
@@ -274,17 +341,12 @@ function parseFfmpegTime(line) {
   return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
 }
 
-ipcMain.handle("video:export", async (_event, { fileName, wav, tempo, durationSeconds }) => {
+ipcMain.handle("video:export", async (_event, { fileName, wav, tempo, durationSeconds, meta }) => {
   if (!currentVideoFile) {
     throw new Error("Esta canción se abrió sin video. Elegí una calidad de video y volvé a cargarla.");
   }
 
-  const result = await dialog.showSaveDialog(mainWindow, {
-    title: "Guardar video",
-    defaultPath: path.join(app.getPath("videos"), fileName),
-    filters: [{ name: "Video MP4", extensions: ["mp4"] }],
-  });
-  if (result.canceled || !result.filePath) return { saved: false };
+  const target = await downloads.resolveTarget(fileName);
 
   await ffmpeg.ensureReady((status) => send("export:status", status));
 
@@ -313,7 +375,7 @@ ipcMain.handle("video:export", async (_event, { fileName, wav, tempo, durationSe
       );
     }
 
-    args.push("-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", result.filePath);
+    args.push("-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-shortest", target.filePath);
 
     send("export:status", { phase: "encoding", message: "Uniendo video y audio…", progress: 0 });
 
@@ -330,11 +392,14 @@ ipcMain.handle("video:export", async (_event, { fileName, wav, tempo, durationSe
       },
     });
 
+    await downloads.record(target.fileName, meta ?? {});
+
     send("export:status", { phase: "done", message: "Listo", progress: 1 });
-    return { saved: true, filePath: result.filePath };
+    return { saved: true, filePath: target.filePath, fileName: target.fileName };
   } finally {
     await fs.rm(workDir, { recursive: true, force: true }).catch(() => {});
   }
 });
 
-if (process.env.TRANSPOSE_SMOKE === "1") require("./smoke")({ app, BrowserWindow, ipcMain });
+if (process.env.TRANSPOSE_SMOKE === "1") require("./smoke")({ app, BrowserWindow });
+if (process.env.PROBE_SHARE === '1') require('./probe-share')({ app, BrowserWindow });

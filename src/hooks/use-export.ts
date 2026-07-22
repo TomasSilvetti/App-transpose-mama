@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ExportFormat, ExportRequest, ExportResponse } from "@/workers/mp3-export.worker";
-import type { ExportStatus } from "@/types/transpose-api";
+import type { DownloadMeta, ExportStatus } from "@/types/transpose-api";
 
 export type ExportTarget = "mp3" | "video";
 
@@ -13,6 +13,7 @@ export type ExportOptions = {
   tempo: number;
   fileName: string;
   target: ExportTarget;
+  meta: DownloadMeta;
   bitrate?: number;
 };
 
@@ -21,7 +22,13 @@ function sanitizeFileName(name: string) {
 }
 
 /** Procesa el audio en un worker y lo entrega como MP3 o unido al video original. */
-export function useExport() {
+export function useExport(onSaved?: () => void) {
+  const onSavedRef = useRef(onSaved);
+
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+  }, [onSaved]);
+
   const workerRef = useRef<Worker | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -40,7 +47,7 @@ export function useExport() {
   }, []);
 
   const runExport = useCallback(
-    ({ buffer, semitones, tempo, fileName, target: destination, bitrate = 192 }: ExportOptions) => {
+    ({ buffer, semitones, tempo, fileName, target: destination, meta, bitrate = 192 }: ExportOptions) => {
       workerRef.current?.terminate();
       setError(null);
       setSavedPath(null);
@@ -87,16 +94,18 @@ export function useExport() {
 
             const result =
               destination === "mp3"
-                ? await api.saveMp3(`${sanitizeFileName(fileName)}.mp3`, bytes)
+                ? await api.saveMp3(`${sanitizeFileName(fileName)}.mp3`, bytes, meta)
                 : await api.exportVideo({
                     fileName: `${sanitizeFileName(fileName)}.mp4`,
                     wav: bytes,
                     tempo,
                     durationSeconds: buffer.duration / tempo,
+                    meta,
                   });
 
             if (result.saved && result.filePath) setSavedPath(result.filePath);
             setProgress(1);
+            onSavedRef.current?.();
           } catch (saveError) {
             setError(
               saveError instanceof Error ? saveError.message : "No pudimos guardar el archivo.",

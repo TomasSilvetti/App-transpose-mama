@@ -27,7 +27,7 @@ class MediaServer {
 
     this.server = http.createServer((request, response) => {
       const token = decodeURIComponent(new URL(request.url, "http://localhost").pathname.slice(1));
-      const filePath = this.files.get(token);
+      const filePath = this.files.get(token)?.filePath;
 
       if (!filePath) {
         response.writeHead(404).end("Not found");
@@ -83,15 +83,21 @@ class MediaServer {
     return this.port;
   }
 
-  publish(filePath) {
+  /**
+   * `temporary` marca los archivos que viven en una carpeta descartable. Los permanentes
+   * (la biblioteca de descargas) se publican igual, pero `clear` no toca su carpeta.
+   */
+  publish(filePath, { temporary = true } = {}) {
     const token = crypto.randomUUID();
-    this.files.set(token, filePath);
+    this.files.set(token, { filePath, temporary });
     return `http://127.0.0.1:${this.port}/${token}`;
   }
 
-  /** Olvida los archivos publicados y borra sus carpetas temporales. */
+  /** Olvida los archivos publicados y borra las carpetas temporales que los contenían. */
   async clear() {
-    const dirs = new Set([...this.files.values()].map((file) => path.dirname(file)));
+    const dirs = new Set(
+      [...this.files.values()].filter((entry) => entry.temporary).map((entry) => path.dirname(entry.filePath)),
+    );
     this.files.clear();
     await Promise.all(
       [...dirs].map((dir) => fsp.rm(dir, { recursive: true, force: true }).catch(() => {})),
